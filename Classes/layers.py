@@ -1,3 +1,4 @@
+import torch
 import tensorflow as tf
 from abc import ABC, abstractmethod
 
@@ -178,3 +179,62 @@ class PoissonLayer(Layer):
         return self._activity
     def spike(self):
         return self._spike
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    
+class PTLayer(ABC):
+    
+    def __init__(self):
+        self.__prevIn__ = []
+        self.__prevOut__ = []
+        
+    def setPrevIn(self, dataIn):
+        self.__prevIn = dataIn
+        
+    def setPrevOut(self, out):
+        self.__prevOut = out
+        
+    def getPrevIn(self):
+        return self.__prevIn
+    
+    def getPrevOut(self):
+        return self.__prevOut
+    
+    def backward(self, gradIn):
+        return (gradIn @ self.gradient())
+    
+    @abstractmethod
+    def forward(self, dataIn):
+        pass
+
+    
+class LoihiLIFLayerPT(PTLayer):
+
+    def __init__(self, threshold=1e-3, tau=1e3):
+        super().__init__()
+        self.thresh = threshold
+        self.tau = tau
+        
+    def forward(self, dataIn):
+        min_val = torch.full(dataIn.size(),1e-20).to(device)
+        state = torch.maximum(dataIn,min_val)
+        self.setPrevIn(state)
+        z = 1./torch.ceil(-self.tau*torch.log(torch.maximum(1-self.thresh/state,min_val)))
+        self.setPrevOut(z)
+        return self.getPrevOut()
+
+class LIFLayerPT(PTLayer):
+
+    def __init__(self, threshold=1e-3, tau=1e3):
+        super().__init__()
+        self.thresh = threshold
+        self.tau = tau
+        
+    def forward(self, dataIn):
+        min_val = torch.full(dataIn.size(),1e-20).to(device)
+        max_val = torch.full(dataIn.size(),1).to(device)
+        state = torch.maximum(dataIn,min_val)
+        self.setPrevIn(state)
+        z = 1./torch.maximum((-self.tau*torch.log(torch.maximum(1-self.thresh/state,min_val))),max_val)
+        self.setPrevOut(z)
+        return self.getPrevOut()
